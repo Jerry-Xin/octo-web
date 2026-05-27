@@ -176,7 +176,7 @@ export default function VoiceSettingsPanel({ onClose }: VoiceSettingsPanelProps)
     setLocalSaving(true);
 
     try {
-      await VoiceService.shared.deleteLocalConfig();
+      await VoiceService.shared.resetLocalConfig({ enabled: localEnabled });
       const newConfig = await VoiceService.shared.getConfig();
       setSharedVoiceConfig(newConfig);
 
@@ -192,7 +192,7 @@ export default function VoiceSettingsPanel({ onClose }: VoiceSettingsPanelProps)
     } finally {
       setLocalSaving(false);
     }
-  }, [localSaving]);
+  }, [localSaving, localEnabled]);
 
   const handleTestProbe = useCallback(async () => {
     if (!localProbeUrl.trim() || probeTestStatus === 'loading') return;
