@@ -19,11 +19,43 @@ function envOr(value: unknown, fallback: string): string {
   return s.length > 0 ? s : fallback
 }
 
-/** Hocuspocus WebSocket endpoint (provided by backend, env-specific). */
-export const WS_ENDPOINT = envOr(
-  import.meta.env?.VITE_COLLAB_WS_ENDPOINT,
-  'wss://collab.octo.example.com',
-)
+/**
+ * Hocuspocus WebSocket endpoint for ALL collaboration traffic.
+ *
+ * Both the doc editor (`collab/createCollabEditor.ts`) and the whiteboard board session
+ * (`board/collab/useWhiteboardSession.ts`) connect to this SAME endpoint — the backend's
+ * unified WS router resolves doc names and 5-segment `:wb:` board names on one server (see
+ * the token contract note in `useWhiteboardSession.ts`). There is no separate "board collab"
+ * service; boards reuse the doc Hocuspocus endpoint.
+ *
+ * Resolution order:
+ *  1. `VITE_COLLAB_WS_ENDPOINT` (build-arg) — explicit per-environment override, used verbatim.
+ *  2. Runtime origin-derived default — when the build-arg is not injected, derive the endpoint
+ *     from the page's own host so the deployed bundle reaches the collab server co-located with
+ *     it (`ws(s)://<page-host>:<port>`) instead of an unreachable placeholder. The collab port
+ *     defaults to the Hocuspocus default 1234 and can be overridden with `VITE_COLLAB_WS_PORT`.
+ *     This mirrors the same-origin asset-host trust below and the `window.location.origin`
+ *     invite-link derivation — preferring a runtime-derived host over a hardcoded IP keeps the
+ *     bundle multi-environment without a rebuild.
+ *  3. SSR / unit-test fallback (no `window`) — localhost, never a public placeholder host.
+ *
+ * The previous default `wss://collab.octo.example.com` was an unreachable placeholder: any
+ * deployment built without `VITE_COLLAB_WS_ENDPOINT` silently fell back to it, so every collab
+ * socket failed with `net::ERR_CONNECTION_CLOSED` and real-time sync (doc + board) never worked.
+ */
+const DEFAULT_COLLAB_WS_PORT = '1234'
+
+function originDerivedWsEndpoint(): string {
+  if (typeof window === 'undefined' || !window.location?.hostname) {
+    // SSR / unit tests: a harmless local default (never a public placeholder host).
+    return `ws://localhost:${DEFAULT_COLLAB_WS_PORT}`
+  }
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const port = envOr(import.meta.env?.VITE_COLLAB_WS_PORT, DEFAULT_COLLAB_WS_PORT)
+  return `${proto}//${window.location.hostname}:${port}`
+}
+
+export const WS_ENDPOINT = envOr(import.meta.env?.VITE_COLLAB_WS_ENDPOINT, originDerivedWsEndpoint())
 
 /** Refresh collab token when it is within this window of expiry. */
 export const TOKEN_REFRESH_LEEWAY_MS = 30_000
